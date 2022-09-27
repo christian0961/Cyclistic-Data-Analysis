@@ -1,0 +1,387 @@
+---
+title: "Google Data Analytics Capstone Project"
+author: "Christian Soenggoro"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load the necessary libraries
+
+```{r message=FALSE, warning=FALSE}
+library(readr)
+library(tidyr)
+library(tidyverse)
+library(dplyr)
+library(janitor)
+library(ggplot2)
+library(lubridate)
+library(skimr)
+library(forcats)
+library(scales)
+library(mapview)
+library(here)
+```
+
+```{r message=FALSE}
+here("202004-divvy-tripdata.csv")
+```
+
+### Load the data
+
+```{r message=FALSE, warning=FALSE}
+trips0 <- read_csv("Google Data Analytics/course 7 R code/202004-divvy-tripdata.csv")
+
+
+```
+
+### Check for NA values
+
+```{r}
+trips1 = trips0 %>% 
+  is.na() %>% 
+  colSums()
+```
+
+### Remove NA values and automatically clean column names
+
+```{r}
+trips2 = trips0 %>% 
+  remove_empty(which = c("rows","cols")) %>% 
+  clean_names()
+```
+
+### Change the latitude and longitude format from character to numeric type
+
+```{r}
+trips2 = trips2 %>% 
+  mutate(start_lat = as.numeric(start_lat),
+         start_lng = as.numeric(start_lng),
+         end_lat = as.numeric(end_lat),
+         end_lng = as.numeric(end_lng))
+```
+
+### Change format to date-time
+
+```{r}
+trips3 = trips2 %>% 
+  mutate(started_at = as_datetime(started_at))
+```
+
+### Make new columns based on date-time information
+
+```{r}
+trips4 = trips3 %>% 
+  mutate(hour_start = hour(started_at),
+         week = week(started_at),
+         weekday = wday(started_at, label =TRUE, abbr = FALSE),
+         day = day(started_at),
+         trip_time = difftime(ended_at, started_at,units = "min"))
+```
+
+### Change to factor data type and rename column for easier understanding
+
+```{r}
+trips5 = trips4 %>% 
+  mutate(rideable_type = as_factor(rideable_type),
+         member_casual = as_factor(member_casual)) %>% 
+  rename(bikes = rideable_type,
+         users = member_casual)
+```
+
+### Check for duplicate data
+
+```{r}
+trips5 %>% 
+  duplicated() %>% 
+  sum()
+```
+
+### Filter unlogical trip time
+
+```{r message=FALSE, warning=FALSE}
+trips6  = trips5 %>% 
+  filter(between(trip_time,1,1440)) %>% 
+  drop_na(end_lat, end_lng)
+```
+
+### Select columns that contains date-time information
+
+```{r}
+trips_time = trips6 %>% 
+  select(ride_id,bikes,users,hour_start,week,weekday,day,trip_time)
+```
+
+### Select columns that contains location information
+
+```{r}
+trips_location =trips6 %>% 
+  select(ride_id,bikes,users,start_station_name,start_lat,start_lng,end_station_name,start_station_id,
+         end_lat,end_lng,end_station_id)
+```
+
+# Data Visualization
+
+### Set plot theme
+
+```{r}
+newtheme <- theme_light() + 
+  theme(plot.title = element_text(color = "#002949", face = 'bold', size =12),
+        plot.subtitle = element_text(color = "#890000", size = 10),
+        plot.caption = element_text(color = '#890000', face = 'italic', size =8),
+        panel.border = element_rect(color = "#002949", size = 1),
+        legend.position = "right",
+        legend.text = element_text(colour="blue", size=10, face="bold"),
+        legend.title = element_text(colour="blue", size=10, face="bold"),
+        #legend.position='none',
+        axis.title.x = element_text(colour = "#890000"),
+        axis.title.y = element_text(colour = "#002949"),
+        axis.text.x = element_text(angle = 45, hjust = 1, color = '#890000'),
+        axis.text.y = element_text(angle = 45, hjust = 1, color = '#002949'),
+        axis.line = element_line(color = "#002949", size =1),
+  )
+
+theme_set(newtheme)
+```
+
+## Hourly Data Visualization
+
+```{r}
+ride_hours = trips_time %>% 
+  group_by(users,hour_start) %>% 
+  summarise(nr_rides = n(),
+            mean_time = mean(trip_time),
+            total_time = sum(trip_time))
+```
+
+### Hourly number of rides
+
+```{r}
+ggplot(data = ride_hours,aes(x=hour_start, y =nr_rides)) +
+  geom_bar(aes(fill=users),position = "dodge",stat = "identity")+
+  scale_y_continuous()+
+  labs(title ="Number of Trips per Hour" ,subtitle = "Number of Trips for every Hours segmented by Users",
+       caption = "Figure 1" ,
+       x= "hour of the day",
+       y= "number of rides")+
+  theme()
+```
+
+### Hourly Average trip time
+
+```{r}
+ggplot(data = ride_hours,aes(x=hour_start, y =mean_time)) +
+  geom_bar(aes(fill=users),position = "dodge",stat = "identity")+
+  scale_y_continuous()+
+  labs(title ="Average duration of Trips per Hour" ,subtitle = "Average duration of Trips for every Hours and segmented Users",
+       caption = "Figure 2" ,
+       x= "hour of the day",
+       y= "Average duration of rides")+
+  theme()
+```
+
+### Hourly Total trip time
+
+```{r}
+ggplot(data = ride_hours,aes(x=hour_start, y =total_time)) +
+  geom_bar(aes(fill=users),position = "dodge",stat = "identity")+
+  scale_y_continuous()+
+  labs(title ="Total duration of Trips per Hour" ,subtitle = "Total duration of Trips for every Hours and segmented by Users",
+       caption = "Figure 3" ,
+       x= "hour of the day",
+       y= "Total time of rides")+
+  theme()
+```
+
+## Day of the week visualization
+
+```{r}
+ride_weekly = trips_time %>% 
+  group_by(users,weekday) %>% 
+  summarise(nr_weekly = n(),
+            mean_week = mean(trip_time),
+            total_week = sum(trip_time))
+```
+
+### Day of the week number of rides
+
+```{r}
+ggplot(data = ride_weekly,aes(x=weekday, y = nr_weekly)) +
+  geom_bar(aes(fill=users),position = "dodge",stat = "identity")+
+  scale_y_continuous()+
+  labs(title ="Number of Trips per Week" ,subtitle = "Number of Trips for day of the week and segmented by Users",
+       caption = "Figure 4" ,
+       x= "Week",
+       y= "Number of rides")+
+  theme()
+```
+
+### Day of the week Average trip time
+
+```{r}
+ggplot(data = ride_weekly,aes(x=weekday, y = mean_week)) +
+  geom_bar(aes(fill=users),position = "dodge",stat = "identity")+
+  scale_y_continuous()+
+  labs(title ="Average duration of Trips per Week" ,subtitle = "Average duration of Trips for day of the week and segmented by Users",
+       caption = "Figure 5" ,
+       x= "Week",
+       y= "Average duration of rides")+
+  theme()
+```
+
+### Day of the week Total trip time
+
+```{r}
+ggplot(data = ride_weekly,aes(x=weekday, y = total_week)) +
+  geom_bar(aes(fill=users),position = "dodge",stat = "identity")+
+  scale_y_continuous()+
+  labs(title ="Total duration of Trips per Week" ,subtitle = "Total duration of Trips for day of the week and segmented by Users",
+       caption = "Figure 6" ,
+       x= "Week",
+       y= "Total duration of rides")+
+  theme()
+```
+
+## Day of the month Visualization
+
+```{r}
+ride_day = trips_time %>% 
+  group_by(users,day) %>% 
+  summarise(nr_day = n(),
+            mean_day = mean(trip_time),
+            total_day = sum(trip_time))
+```
+
+### Day of the month number of rides
+
+```{r}
+ggplot(data = ride_day,aes(x = day, y = nr_day)) +
+  geom_bar(aes(fill=users),position = "dodge",stat = "identity")+
+  scale_y_continuous()+
+  labs(title ="Number of Trips per day of the month" ,subtitle = "Number of Trips for day of the month and segmented by Users",
+       caption = "Figure 7" ,
+       x= "day",
+       y= "Number of rides")+
+  theme()
+```
+
+### Day of the month Average trip time
+
+```{r}
+ggplot(data = ride_day,aes(x=day, y = mean_day)) +
+  geom_bar(aes(fill=users),position = "dodge",stat = "identity")+
+  scale_y_continuous()+
+  labs(title ="Average duration of Trips per day of the month" ,subtitle = "Average duration of Trips for day of the month and segmented by Users",
+       caption = "Figure 8" ,
+       x= "day",
+       y= "Average duration of rides")+
+  theme()
+```
+
+### Day of the month Total trip time
+
+```{r}
+ggplot(data = ride_day,aes(x=day, y = total_day)) +
+  geom_bar(aes(fill=users),position = "dodge",stat = "identity")+
+  scale_y_continuous()+
+  labs(title ="Total duration of Trips per day of the month" ,subtitle = "Total duration of Trips for day of the month and segmented by Users",
+       caption = "Figure 9" ,
+       x= "day",
+       y= "Total duration of rides")+
+  theme()
+```
+
+## Visualize by location
+
+```{r}
+pop_start_station = trips_location %>% 
+  group_by(
+    users, start_station_name, start_lat, start_lng
+  ) %>% 
+  summarise(
+    nr_rides_start = n()
+  ) %>% 
+  arrange(-nr_rides_start)
+
+
+```
+
+```{r}
+pop_end_station = trips_location %>% 
+  group_by(
+    users, end_station_name, end_lat, end_lng
+  ) %>% 
+  summarise(
+    nr_rides_end = n()
+  ) %>% 
+  arrange(-nr_rides_end)
+```
+
+### Top 10 Start station
+
+```{r}
+pop_start_station[1:10, ] %>% 
+  ggplot(aes(start_station_name, nr_rides_start, fill = users))+
+  geom_col(position = "dodge")+
+  coord_flip()+
+  labs(
+    title = "Most Popular Start Stations",
+    subtitle = "Top 10 most popular start stations",
+    caption = "Fig 10 ",
+    x = "station name",
+    y = "number of trips"
+  )+
+  theme()
+```
+
+### Top 10 end station
+
+```{r}
+pop_end_station[1:10,] %>% 
+  ggplot(aes(end_station_name, nr_rides_end, fill = users))+
+  geom_col(position = "dodge")+
+  coord_flip()+
+  labs(
+    title = "Most Popular End Stations Segmented by Users",
+    subtitle = "Top 10 most popular end stations",
+    caption = "Fig 11",
+    x = "station name",
+    y = "number of trips"
+  )+
+  theme()
+```
+
+### Mapview of 30 most popular start station
+
+```{r}
+pop_start_station[1:30, ] %>%
+  mapview(
+    xcol = "start_lng", 
+    ycol = "start_lat",
+    cex = "nr_rides_start",
+    alpha = 0.9, 
+    crs = 4269,
+    color = "#8b0000",
+    grid = F, 
+    legend = T,
+    layer.name = "30 Most Popular Start Stations")
+```
+
+### Mapview of 30 most popular end station
+
+```{r}
+pop_end_station[1:30,] %>% 
+  mapview(
+    xcol = "end_lng",
+    ycol = "end_lat",
+    cex = "nr_rides_end", # size of circle based on value size
+    alpha = 0.9,
+    crs = 4269,
+    color = "#8b0000",
+    grid = F,
+    legend = T,
+    layer.name = "30 Most Popular End Stations")
+```
